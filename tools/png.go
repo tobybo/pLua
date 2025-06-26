@@ -5,8 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"github.com/goccy/go-graphviz"
-	"io/ioutil"
+	"io"
 	"os"
+	"context"
 )
 
 func main() {
@@ -33,7 +34,7 @@ func showpng(dot string, png string) {
 		os.Exit(1)
 	}
 
-	inputdata, err := ioutil.ReadAll(inputfile)
+	inputdata, err := io.ReadAll(inputfile)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -45,22 +46,28 @@ func showpng(dot string, png string) {
 		os.Exit(1)
 	}
 
+	ctx := context.Background()
+
 	if png != "" {
-		g := graphviz.New()
-
-		var buf bytes.Buffer
-		if err := g.Render(graph, graphviz.PNG, &buf); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		_, err = g.RenderImage(graph)
+		g, err := graphviz.New(ctx)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
 
-		if err := g.RenderFilename(graph, graphviz.PNG, png); err != nil {
+		var buf bytes.Buffer
+		if err := g.Render(ctx, graph, graphviz.PNG, &buf); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		_, err = g.RenderImage(ctx, graph)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		if err := g.RenderFilename(ctx, graph, graphviz.PNG, png); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
