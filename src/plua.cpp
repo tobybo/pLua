@@ -32,11 +32,13 @@ extern "C" {
 #include "lua.h"
 #include "lualib.h"
 #include "lauxlib.h"
+#include "lstate.h"
 }
 
 const int open_debug = 0;
 int gSampleCount = 0;
 std::string gFilename;
+global_State *l_G = 0;
 lua_State *gL = 0;
 int gRunning = 0;
 
@@ -216,7 +218,7 @@ static void flush() {
 
 static int lrealstopsafe(lua_State *L) {
     gRunning = 0;
-
+	l_G = NULL;
     struct itimerval timer;
     timer.it_interval.tv_sec = 0;
     timer.it_interval.tv_usec = 0;
@@ -294,7 +296,7 @@ static void SignalHandlerHook(lua_State *L, lua_Debug *par) {
 }
 
 static void SignalHandler(int sig, siginfo_t *sinfo, void *ucontext) {
-    lua_sethook(gL, SignalHandlerHook, LUA_MASKCOUNT, 1);
+    if ( l_G->mainthread != l_G->actionthread ) lua_sethook( l_G->actionthread, SignalHandlerHook, LUA_MASKCOUNT, 1 );
 }
 
 static int lrealstartsafe(lua_State *L) {
@@ -355,6 +357,7 @@ extern "C" int lrealstart(lua_State *L, int second, const char *file) {
     }
 
     gL = L;
+	l_G = L->l_G;
     gSampleCount = second * 1000 / CPU_SAMPLE_ITER;
     gFilename = file;
 
@@ -573,7 +576,8 @@ static void my_lua_Alloc_safe() {
     auto hook_alloc_sz = gMemProfileData.hook_alloc_sz;
 
     CallStack cs;
-    get_cur_callstack(gL, cs);  // 内部可能触发再次分配内存
+
+    get_cur_callstack(l_G->actionthread, cs);  // 内部可能触发再次分配内存
 
     auto it = gMemProfileData.callstack.find(&cs);
     CallStack *pointer_cs = 0;
@@ -646,7 +650,7 @@ static void *my_lua_Alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
         gMemProfileData.total++;
 
         // 防止重入，get_cur_callstack是可能触发lua内存分配的。当再次重入，只是设置下hook，等原来hook退出后清空
-        lua_sethook(gL, AllocMemHandlerHook, LUA_MASKCOUNT, 1);
+        lua_sethook(l_G->actionthread, AllocMemHandlerHook, LUA_MASKCOUNT, 1);
 
         void *alloc_ptr = gMemProfileData.oldAlloc(ud, ptr, osize, nsize);
 
@@ -759,6 +763,7 @@ extern "C" int lrealstartmem(lua_State *L, int count, const char *file) {
     }
 
     gL = L;
+	l_G = L->l_G;
     gSampleCount = count;
     gFilename = file;
     gMemProfileData.oldAlloc = NULL;
